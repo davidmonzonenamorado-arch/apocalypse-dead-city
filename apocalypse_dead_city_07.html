@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>APOCALYPSE: DEAD CITY — Demo 0.7</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111722;font-family:Arial,sans-serif}
+#hud{position:fixed;inset:0;color:#fff;pointer-events:none;text-shadow:0 2px 5px #000}
+#title{position:absolute;top:15px;left:18px;font-weight:900;letter-spacing:2px;font-size:19px}
+#stats{position:absolute;top:52px;left:18px;width:190px;background:#111b;padding:9px;border:1px solid #ffffff30;border-radius:8px;font-size:12px}
+.bar{height:9px;background:#3a2525;border-radius:8px;margin:5px 0 8px;overflow:hidden}.fill{height:100%;width:100%;background:#db5144}
+#energy{background:#c58c45}
+#help{position:absolute;left:18px;bottom:17px;background:#10131dcc;padding:11px 14px;border:1px solid #ffffff33;border-radius:8px;line-height:1.55;font-size:12px}
+#cross{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:24px;font-weight:bold;color:#fff;text-shadow:0 0 8px #8defff}
+#weapon{position:absolute;right:20px;bottom:20px;background:#111b;padding:12px 15px;border:1px solid #ffffff30;border-radius:8px;text-align:right}
+#notice{position:absolute;top:18%;left:50%;transform:translateX(-50%);background:#111c;padding:10px 16px;border-radius:8px}
+#overlay{position:fixed;inset:0;background:#080b12cc;display:grid;place-items:center;color:white;text-align:center;z-index:5}
+#panel{max-width:540px;margin:20px;padding:28px;background:#171b25;border:1px solid #ffffff30;border-radius:14px}
+h1{letter-spacing:3px;margin:0 0 8px;color:#f29a55}
+button{cursor:pointer;border:0;border-radius:7px;background:#d76b35;color:white;padding:12px 20px;font-weight:bold}
+#damage{position:fixed;inset:0;pointer-events:none;border:0 solid #e44;transition:border-width .12s}
+</style></head><body>
+<div id="hud"><div id="title">APOCALYPSE: DEAD CITY</div>
+<div id="stats">SALUD <span id="hpnum">100</span><div class="bar"><div class="fill" id="hp"></div></div>ENERGÍA <span id="enumn">100</span><div class="bar"><div class="fill" id="energy"></div></div>ENEMIGOS: <span id="count">0</span></div>
+<div id="cross">+</div><div id="notice">Encuentra una ruta segura entre las ruinas</div>
+<div id="help">W A S D o FLECHAS — moverse<br>Mouse — mirar<br>Espacio — saltar<br>Shift — correr<br>Clic izquierdo — pulso de energía<br>ESC — liberar mouse</div>
+<div id="weapon"><b>EMISOR DE ENERGÍA</b><br><small>Pulso no letal · clic izquierdo</small></div></div>
+<div id="damage"></div>
+<div id="overlay"><div id="panel"><h1>DEAD CITY — VERSIÓN 0.7</h1><p>La ciudad cayó. Explora las ruinas, evita a los infectados y usa tu emisor de energía para defenderte.</p><p>WASD (Q para izquierda) o flechas para moverte · Mouse para mirar · Clic para lanzar pulsos.</p><button id="start">ENTRAR A LA CIUDAD</button></div></div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+const scene=new THREE.Scene();scene.background=new THREE.Color(0xd98250);scene.fog=new THREE.FogExp2(0xc47a50,.008);
+const camera=new THREE.PerspectiveCamera(76,innerWidth/innerHeight,.1,260);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.22;renderer.outputColorSpace=THREE.SRGBColorSpace;document.body.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xc6d8ed,0x493027,2.0));
+const sun=new THREE.DirectionalLight(0xffb77a,3.5);sun.position.set(-35,55,25);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-85;sun.shadow.camera.right=85;sun.shadow.camera.top=85;sun.shadow.camera.bottom=-85;scene.add(sun);
+const mats={ground:new THREE.MeshStandardMaterial({color:0x514b43,roughness:1}),road:new THREE.MeshStandardMaterial({color:0x292d31,roughness:1}),concrete:new THREE.MeshStandardMaterial({color:0x77736d,roughness:1}),dark:new THREE.MeshStandardMaterial({color:0x3d4145,roughness:1}),brick:new THREE.MeshStandardMaterial({color:0x8b5945,roughness:1}),glass:new THREE.MeshStandardMaterial({color:0x263b43,metalness:.35,roughness:.85}),rust:new THREE.MeshStandardMaterial({color:0x9a5130,roughness:.9}),green:new THREE.MeshStandardMaterial({color:0x53664b,roughness:1}),glow:new THREE.MeshBasicMaterial({color:0x54e6ff})};
+function box(x,y,z,sx,sy,sz,mat,rot=0){let m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.position.set(x,y,z);m.rotation.y=rot;m.castShadow=true;m.receiveShadow=true;scene.add(m);return m}
+box(0,-.35,0,160,.6,160,mats.ground);box(0,-.02,0,13,.08,160,mats.road);
+for(let z=-76;z<80;z+=9)box(0,.035,z,.18,.025,4.5,new THREE.MeshStandardMaterial({color:0xc6ad83}));
+function building(x,z,w,d,h,mat=mats.concrete){
+  // Main shell and broken roofline
+  const shell=box(x,h/2,z,w,h,d,mat);
+  const floorMat=new THREE.MeshStandardMaterial({color:0x55565a,roughness:.95});
+  const trim=new THREE.MeshStandardMaterial({color:0x34383b,roughness:.8});
+  const windowLit=new THREE.MeshStandardMaterial({color:0x9b6947,emissive:0x3b1e0d,emissiveIntensity:.35,roughness:.5});
+  const windowDark=new THREE.MeshStandardMaterial({color:0x17252b,metalness:.25,roughness:.9});
+  const glassMats=[mats.glass,windowDark,windowLit];
+  // Floor bands, window recesses, frames and occasional balconies
+  for(let y=2.1;y<h-1;y+=3.1){
+    box(x,y,z-d/2-.10,w-.25,.12,.18,trim);
+    for(let xx=x-w/2+1.15;xx<x+w/2-.5;xx+=2.45){
+      const ww=1.28, wh=1.62;
+      box(xx,y+.18,z-d/2-.17,ww+.18,wh+.18,.12,trim);
+      box(xx,y+.18,z-d/2-.245,ww,wh,.045,glassMats[Math.floor(Math.random()*glassMats.length)]);
+      box(xx,y+.18,z-d/2-.28,.075,wh,.07,trim);
+      box(xx,y+.18,z-d/2-.28,ww,.07,.07,trim);
+      if(Math.random()>.78){
+        box(xx,y-.9,z-d/2-.65,1.7,.12,.85,trim);
+        box(xx,y-.48,z-d/2-1.02,1.7,.75,.07,trim);
+      }
+    }
+  }
+  // Roof parapet, HVAC units, water tanks and antennae
+  box(x,h+.28,z,w+.35,.55,d+.35,trim);
+  for(let i=0;i<3;i++){
+    let ax=x+(Math.random()-.5)*w*.65, az=z+(Math.random()-.5)*d*.55;
+    box(ax,h+.8,az,1.4,.9,1.2,floorMat);
+    box(ax,h+1.28,az,.85,.12,.7,trim);
+  }
+  if(Math.random()>.35){
+    const tank=box(x+w*.22,h+1.15,z+d*.12,1.35,1.8,1.35,trim);
+    tank.rotation.z=.04;
+  }
+  // Exposed concrete scars and broken corner chunks
+  for(let i=0;i<Math.floor(h/2.2);i++){
+    const side=Math.random()>.5?-1:1;
+    const yy=1+Math.random()*(h-2);
+    box(x+side*(w/2+.035),yy,z+(Math.random()-.5)*d*.8,.16,.35+Math.random()*.8,.45+Math.random()*.6,
+      Math.random()>.5?mats.dark:mats.brick,Math.random()*.25);
+  }
+  // Rubble around the base
+  for(let i=0;i<13;i++){
+    const rx=x+(Math.random()-.5)*w*1.55, rz=z+(Math.random()-.5)*d*1.55, s=.25+Math.random()*.75;
+    box(rx,s/2,rz,s*1.3,s,s,mats.dark,Math.random()*2);
+  }
+}
+building(-13,-13,12,12,20,mats.dark);building(15,-19,14,12,27);building(-18,18,16,13,15,mats.brick);building(19,17,13,15,22,mats.dark);building(-34,-5,15,15,31);building(35,2,17,14,25,mats.brick);building(-10,-42,18,13,18,mats.brick);building(13,-48,15,15,30);building(-38,38,17,16,21,mats.dark);building(40,38,18,14,29);
+function car(x,z,color){let cm=new THREE.MeshStandardMaterial({color,roughness:.7});box(x,.75,z,2.2,.8,4,cm);box(x,1.35,z-.25,1.8,.65,2,mats.glass);for(let dx of [-.9,.9])for(let dz of [-1.25,1.25]){let w=new THREE.Mesh(new THREE.CylinderGeometry(.38,.38,.22,10),mats.dark);w.rotation.z=Math.PI/2;w.position.set(x+dx,.4,z+dz);scene.add(w)}}
+car(-3,8,0x6e4938);car(3,-20,0x58615d);car(5,27,0x7b6b43);
+function tree(x,z){box(x,1.5,z,.7,3,.7,new THREE.MeshStandardMaterial({color:0x554235}));for(let i=0;i<5;i++)box(x+(Math.random()-.5)*1.5,3.5+i*.35,z+(Math.random()-.5)*1.5,2.4-i*.2,1.4,2.4-i*.2,mats.green)}
+tree(-25,4);tree(26,-4);tree(-28,-30);tree(29,29);
+for(let i=0;i<90;i++){let s=.2+Math.random()*.7;let dust=new THREE.Mesh(new THREE.BoxGeometry(s,s,s),new THREE.MeshBasicMaterial({color:0xffc18a,transparent:true,opacity:.13}));dust.position.set((Math.random()-.5)*100,1+Math.random()*14,(Math.random()-.5)*100);scene.add(dust)}
+// voxel infected: deliberately stylized, fictional game enemies
+const enemies=[];
+function makeEnemy(x,z){let g=new THREE.Group();g.position.set(x,0,z);let skin=new THREE.MeshStandardMaterial({color:0x71806a,roughness:1}),cloth=new THREE.MeshStandardMaterial({color:0x443d3a,roughness:1}),eye=new THREE.MeshBasicMaterial({color:0xff694d});function part(w,h,d,mat,px,py,pz){let m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(px,py,pz);m.castShadow=true;m.receiveShadow=true;g.add(m);return m}
+part(.65,.9,.38,cloth,0,1.05,0);part(.58,.58,.48,skin,0,1.82,0);part(.18,.1,.08,eye,-.15,1.9,-.25);part(.18,.1,.08,eye,.15,1.9,-.25);part(.22,.7,.25,skin,-.48,1.05,0);part(.22,.7,.25,skin,.48,1.05,0);part(.25,.65,.28,cloth,-.2,.35,0);part(.25,.65,.28,cloth,.2,.35,0);scene.add(g);enemies.push({g,hp:3,alive:true,hit:0,phase:Math.random()*5})}
+[[-8,-12],[9,-29],[-23,8],[24,8],[-6,35],[30,-35],[0,-55]].forEach(p=>makeEnemy(...p));
+const player={pos:new THREE.Vector3(0,1.7,12),vel:new THREE.Vector3(),yaw:0,pitch:0,onGround:false,hp:100,energy:100};const keys={};
+let thirdPerson=false;
+const avatar=new THREE.Group();
+const bodyMat=new THREE.MeshStandardMaterial({color:0x283b45,roughness:.9});
+const skinMat=new THREE.MeshStandardMaterial({color:0xb98b69,roughness:1});
+const torso=new THREE.Mesh(new THREE.BoxGeometry(.62,.85,.34),bodyMat);torso.position.y=1.05;avatar.add(torso);
+const head=new THREE.Mesh(new THREE.BoxGeometry(.38,.4,.38),skinMat);head.position.y=1.68;avatar.add(head);
+const legMat=new THREE.MeshStandardMaterial({color:0x20262b,roughness:1});
+for(const side of [-1,1]){const leg=new THREE.Mesh(new THREE.BoxGeometry(.23,.7,.27),legMat);leg.position.set(side*.17,.35,0);avatar.add(leg)}
+scene.add(avatar);avatar.visible=false;
+// Arma voxel: piezas cúbicas, estilo Minecraft, sin parecer un arma realista.
+function makeVoxelRifle(){
+  const g=new THREE.Group();
+  const metal=new THREE.MeshStandardMaterial({color:0x303a40,roughness:1});
+  const darkMetal=new THREE.MeshStandardMaterial({color:0x171e23,roughness:1});
+  const wood=new THREE.MeshStandardMaterial({color:0x765039,roughness:1});
+  const cyan=new THREE.MeshStandardMaterial({color:0x49dff2,emissive:0x126477,emissiveIntensity:.8});
+  function part(x,y,z,sx,sy,sz,mat){const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.position.set(x,y,z);m.castShadow=true;g.add(m);return m}
+  part(0,0,0,.22,.2,.72,metal);                 // cuerpo
+  part(0,-.02,-.55,.12,.12,.55,darkMetal);      // cañón
+  part(0,-.02,-.86,.18,.16,.12,metal);          // boca
+  part(0,-.19,.13,.17,.34,.22,wood);            // empuñadura
+  part(0,.01,.48,.2,.17,.48,wood);              // culata
+  part(0,.16,-.12,.12,.11,.22,darkMetal);       // mira
+  part(0,.23,-.12,.08,.06,.1,cyan);             // visor brillante
+  part(.13,-.03,.02,.08,.13,.24,darkMetal);    // cargador
+  return g;
+}
+scene.add(camera);
+const firstPersonRifle=makeVoxelRifle();
+firstPersonRifle.position.set(.43,-.38,-.78);
+camera.add(firstPersonRifle);
+const thirdPersonRifle=makeVoxelRifle();
+thirdPersonRifle.scale.set(.72,.72,.72);
+thirdPersonRifle.position.set(.42,1.25,-.42);
+thirdPersonRifle.rotation.y=-.12;
+avatar.add(thirdPersonRifle);
+
+
+addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyA'&&!e.repeat)shoot();if(e.code==='ShiftLeft'&&!e.repeat){thirdPerson=!thirdPerson;avatar.visible=thirdPerson;firstPersonRifle.visible=!thirdPerson;}});addEventListener('keyup',e=>keys[e.code]=false);
+const overlay=document.getElementById('overlay');document.getElementById('start').onclick=()=>{renderer.domElement.requestPointerLock();overlay.style.display='none'};
+renderer.domElement.addEventListener('click',()=>{if(!document.pointerLockElement && player.hp>0){renderer.domElement.requestPointerLock();overlay.style.display='none'}});
+document.addEventListener('pointerlockchange',()=>{if(document.pointerLockElement!==renderer.domElement&&player.hp>0)overlay.style.display='grid'});
+document.addEventListener('mousemove',e=>{if(document.pointerLockElement===renderer.domElement){player.yaw-=e.movementX*.003;player.pitch-=e.movementY*.003;player.pitch=Math.max(-1.25,Math.min(1.25,player.pitch))}});
+let lastShot=0;const pulses=[];function shoot(){if(document.pointerLockElement!==renderer.domElement||player.energy<12||performance.now()-lastShot<350)return;lastShot=performance.now();player.energy-=12;camera.updateMatrixWorld();let dir=new THREE.Vector3();camera.getWorldDirection(dir).normalize();let orb=new THREE.Mesh(new THREE.SphereGeometry(.13,10,10),mats.glow);orb.position.copy(camera.position).addScaledVector(dir,.8);scene.add(orb);pulses.push({mesh:orb,dir,life:1.2,hit:new Set()})}
+addEventListener('mousedown',e=>{if(e.button===0)shoot()});
+const clock=new THREE.Clock();let messageTimer=0;
+function animate(){requestAnimationFrame(animate);let dt=Math.min(clock.getDelta(),.04);if(player.hp>0){let f=new THREE.Vector3(-Math.sin(player.yaw),0,-Math.cos(player.yaw)),r=new THREE.Vector3(Math.cos(player.yaw),0,-Math.sin(player.yaw)),move=new THREE.Vector3();if(keys.KeyW||keys.ArrowUp)move.add(f);if(keys.KeyS||keys.ArrowDown)move.sub(f);if(keys.KeyD||keys.ArrowRight)move.add(r);if(keys.KeyQ||keys.ArrowLeft)move.sub(r);if(move.length())move.normalize();let sp=5;player.pos.addScaledVector(move,sp*dt);player.vel.y-=18*dt;if(keys.Space&&player.onGround){player.vel.y=7;player.onGround=false}player.pos.y+=player.vel.y*dt;if(player.pos.y<1.7){player.pos.y=1.7;player.vel.y=0;player.onGround=true}player.pos.x=THREE.MathUtils.clamp(player.pos.x,-70,70);player.pos.z=THREE.MathUtils.clamp(player.pos.z,-70,70);if(thirdPerson){
+avatar.position.set(player.pos.x,player.pos.y-1.7,player.pos.z);
+avatar.rotation.y=player.yaw;
+const back=new THREE.Vector3(Math.sin(player.yaw),0,Math.cos(player.yaw));
+camera.position.copy(player.pos).addScaledVector(back,5.2).add(new THREE.Vector3(0,2.0,0));
+const aimDir=new THREE.Vector3(-Math.sin(player.yaw)*Math.cos(player.pitch),-Math.sin(player.pitch),-Math.cos(player.yaw)*Math.cos(player.pitch));
+const lookTarget=player.pos.clone().addScaledVector(aimDir,8);
+camera.lookAt(lookTarget);
+}else{
+camera.position.copy(player.pos);
+camera.rotation.order='YXZ';camera.rotation.y=player.yaw;camera.rotation.x=player.pitch;
+}
+for(const e of enemies){if(!e.alive)continue;let d=new THREE.Vector3().subVectors(player.pos,e.g.position);d.y=0;let dist=d.length();if(dist>1.35){d.normalize();e.g.position.addScaledVector(d,dt*(dist<18?1.65:.35));e.g.rotation.y=Math.atan2(d.x,d.z)}else{e.hit-=dt;if(e.hit<=0){player.hp=Math.max(0,player.hp-7);e.hit=1.1;document.getElementById('damage').style.borderWidth='24px';setTimeout(()=>document.getElementById('damage').style.borderWidth='0',120)}}e.phase+=dt*5;e.g.position.y=Math.abs(Math.sin(e.phase))*.045}
+}
+for(let i=pulses.length-1;i>=0;i--){let p=pulses[i];p.mesh.position.addScaledVector(p.dir,38*dt);p.life-=dt;for(let e of enemies){if(!e.alive||p.hit.has(e))continue;let center=e.g.position.clone().add(new THREE.Vector3(0,1.2,0));if(center.distanceTo(p.mesh.position)<1.05){e.hp--;p.hit.add(e);if(e.hp<=0){e.alive=false;scene.remove(e.g);document.getElementById('notice').textContent='Infectado neutralizado';messageTimer=2}}}if(p.life<=0){scene.remove(p.mesh);pulses.splice(i,1)}}
+player.energy=Math.min(100,player.energy+5*dt);document.getElementById('hp').style.width=player.hp+'%';document.getElementById('hpnum').textContent=player.hp;document.getElementById('energy').style.width=player.energy+'%';document.getElementById('enumn').textContent=Math.floor(player.energy);document.getElementById('count').textContent=enemies.filter(e=>e.alive).length;
+if(messageTimer>0){messageTimer-=dt;if(messageTimer<=0)document.getElementById('notice').textContent='Explora la ciudad abandonada'}
+renderer.render(scene,camera)}
+animate();addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script></body></html>
